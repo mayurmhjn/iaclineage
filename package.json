@@ -1,0 +1,10 @@
+{
+  "name": "iaclineage-browser-tests",
+  "private": true,
+  "scripts": {
+    "test:browser": "node scripts/test_browser.cjs"
+  },
+  "devDependencies": {
+    "playwright": "1.62.1"
+  }
+}

@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>IaCLineage interactive report</title>
+  <style>__REPORT_CSS__</style>
+</head>
+<body>
+  <a class="skip-link" href="#workspace">Skip to workspace</a>
+  <header class="app-header">
+    <strong class="brand">IaCLineage</strong>
+    <span class="badge">Offline report</span>
+    <span class="header-note">Terraform source evidence</span>
+    <label class="cache-filter" title="Applies to all pages, reference counts, and lineage. This changes visibility only; content remains in the report file."><input id="hide-terraform" type="checkbox"> Hide .terraform content</label>
+    <button id="toggle-declarations" aria-controls="declarations" aria-expanded="true">Hide declarations</button>
+  </header>
+  <p id="source-scope-note" class="scope-note" hidden>.terraform content hidden. Counts, references, and traces show only visible source. The report file still contains all indexed content.</p>
+  <div id="sensitive-warning" class="warning" hidden><strong>Sensitive content enabled.</strong> This report can contain strings, comments, heredocs, and secrets. Keep this file in a trusted location.</div>
+  <noscript><p class="warning">Enable JavaScript to explore this offline report, or generate a static HTML report with <code>--format html</code>.</p></noscript>
+  <div id="app" class="app-layout">
+    <aside id="declarations" class="explorer" aria-label="Declaration navigation">
+      <div id="resize-declarations" class="panel-resizer" role="separator" tabindex="0" aria-label="Resize Declarations" aria-controls="declarations" aria-orientation="vertical" title="Drag or use arrow keys to resize. Double-click to reset."></div>
+      <div class="panel-content">
+      <div class="section-heading"><h2>Declarations</h2><button id="browse" class="quiet">View table</button></div>
+      <label for="search">Search declarations</label>
+      <input id="search" type="search" placeholder="Address, name, or source path" autocomplete="off">
+      <details id="filters"><summary>Filter declarations <span id="filter-count"></span></summary>
+        <div class="filter-fields">
+          <label for="project">Project</label><select id="project"><option value="">All projects</option></select>
+          <label for="kind">Kind</label><select id="kind"><option value="">All kinds</option></select>
+          <label for="status">Evidence</label><select id="status"><option value="">All declarations</option><option value="unresolved">Unresolved references</option><option value="diagnostic">File diagnostics</option><option value="expression">Expression limits</option></select>
+          <button id="clear-filters" class="quiet">Clear filters</button>
+        </div>
+      </details>
+      <p id="result-count" class="muted small" role="status"></p>
+      <nav id="declaration-nav" aria-label="Filtered declarations"></nav>
+      <div class="pagination"><button id="previous-page">Previous</button><span id="page-label"></span><button id="next-page">Next</button></div>
+      <p class="sidebar-note">Source only. No Terraform execution, network access, or runtime evaluation.</p>
+      </div>
+    </aside>
+    <main id="workspace" tabindex="-1">
+      <section id="browse-view">
+        <div class="workspace-heading"><h1>Explore your Terraform source</h1><p class="muted">Find a declaration, inspect its fields, then follow the evidence.</p></div>
+        <div class="section-toolbar"><h2>Declaration index</h2><label for="sort">Sort by</label><select id="sort"><option value="address">Address</option><option value="kind">Kind</option><option value="upstream">Upstream references</option><option value="downstream">Downstream references</option></select></div>
+        <div class="table-scroll"><table><caption class="sr-only">Declarations matching your search and filters</caption><thead><tr><th scope="col">Declaration</th><th scope="col">Kind</th><th scope="col">Source</th><th scope="col">References</th><th scope="col">Evidence</th></tr></thead><tbody id="declaration-rows"></tbody></table></div>
+        <div id="table-empty" class="empty" hidden></div>
+        <details class="report-diagnostics"><summary id="report-diagnostics-title">Report diagnostics</summary><div id="report-diagnostics"></div></details>
+      </section>
+      <section id="object-view" hidden>
+        <div class="workspace-heading">
+          <div class="object-toolbar"><button id="back">Back</button><button id="copy-address">Copy address</button><span id="object-kind" class="badge"></span></div>
+          <h1 id="object-address"></h1><p id="object-location" class="muted mono"></p>
+          <div id="object-status" class="status-row"></div>
+        </div>
+        <div class="tabs" role="tablist" aria-label="Declaration details">
+          <button id="tab-overview" role="tab" aria-controls="panel-overview" aria-selected="false" tabindex="-1" data-tab="overview">Overview</button>
+          <button id="tab-fields" role="tab" aria-controls="panel-fields" aria-selected="true" data-tab="fields">Fields</button>
+          <button id="tab-references" role="tab" aria-controls="panel-references" aria-selected="false" tabindex="-1" data-tab="references">References</button>
+          <button id="tab-diagnostics" role="tab" aria-controls="panel-diagnostics" aria-selected="false" tabindex="-1" data-tab="diagnostics">Diagnostics</button>
+          <button id="tab-source" role="tab" aria-controls="panel-source" aria-selected="false" tabindex="-1" data-tab="source">Source</button>
+        </div>
+        <section id="panel-overview" class="detail-panel" role="tabpanel" aria-labelledby="tab-overview" hidden></section>
+        <section id="panel-fields" class="detail-panel" role="tabpanel" aria-labelledby="tab-fields">
+          <div class="section-heading"><h2>Fields &amp; nested blocks</h2><button id="all-fields" class="quiet">Expand all</button></div>
+          <div class="field-search"><label for="field-search">Filter fields</label><input id="field-search" type="search" placeholder="Field name or nested path" autocomplete="off" aria-controls="field-rows" aria-describedby="field-filter-status"><button id="clear-field-search" class="quiet" disabled>Clear</button></div>
+          <p id="field-filter-status" class="muted small" role="status" hidden></p>
+          <div class="table-scroll"><table class="fields-table"><caption class="sr-only">Source-defined fields. Select a field to trace its references.</caption><thead><tr><th scope="col">Field</th><th scope="col">Source evidence</th><th scope="col">Type</th></tr></thead><tbody id="field-rows"></tbody></table></div>
+          <div id="fields-empty" class="empty compact" hidden></div>
+          <p id="privacy-note" class="muted small"></p>
+        </section>
+        <section id="panel-references" class="detail-panel" role="tabpanel" aria-labelledby="tab-references" hidden></section>
+        <section id="panel-diagnostics" class="detail-panel" role="tabpanel" aria-labelledby="tab-diagnostics" hidden></section>
+        <section id="panel-source" class="detail-panel" role="tabpanel" aria-labelledby="tab-source" hidden></section>
+        <section id="focused-lineage" class="lineage-section" aria-labelledby="lineage-heading">
+          <div class="section-heading"><h2 id="lineage-heading">Focused lineage</h2><button id="maximize-lineage" aria-controls="focused-lineage" aria-pressed="false">Maximize lineage</button><button id="whole-declaration" class="quiet">Trace whole declaration</button></div>
+          <div class="lineage-toolbar lineage-primary-controls" aria-label="Primary trace controls">
+            <div class="segments" role="group" aria-label="Lineage direction"><button data-direction="up" aria-pressed="false">Upstream</button><button data-direction="down" aria-pressed="false">Downstream</button><button data-direction="both" aria-pressed="true">Both</button></div>
+            <div class="control-group"><label for="depth">Automatic depth</label><select id="depth"><option value="1" selected>1 hop</option><option value="2">2 hops</option><option value="3">3 hops</option><option value="5">5 hops</option><option value="all">All reachable</option></select></div>
+            <div class="control-group"><label for="lineage-view">View</label><select id="lineage-view"><option value="both">Graph + table</option><option value="graph" selected>Graph only</option><option value="table">Table only</option></select></div>
+            <button id="all-lineage-details" class="quiet" aria-controls="lineage-canvas">Expand all details</button>
+          </div>
+          <details class="lineage-options"><summary>More trace controls</summary><div class="lineage-toolbar">
+            <button id="expand-lineage">Expand visible branches</button><button id="fit-lineage">Shrink to 75–100%</button><button id="center-lineage">Center selected</button><button id="reset-lineage">Reset</button>
+          </div></details>
+          <p class="muted small">Arrows show supplier to consumer. Upstream = dependencies; downstream = dependents.</p>
+          <div id="lineage-viewport" tabindex="0" aria-label="Lineage diagram; scroll to explore"><div id="lineage-canvas"></div>
+            <div class="graph-legend" aria-label="Graph legend">
+              <strong>Graph legend</strong>
+              <span><i class="legend-swatch node-selected" aria-hidden="true"></i> Selected declaration</span>
+              <span><i class="legend-swatch node-unresolved" aria-hidden="true"></i> Unresolved or diagnostic</span>
+              <span><i class="legend-swatch edge-direct" aria-hidden="true"></i> Direct reference</span>
+              <span><i class="legend-swatch edge-limited" aria-hidden="true"></i> Expression boundary</span>
+            </div>
+        </div>
+
+          <p id="lineage-note" class="muted small" role="status"></p>
+          <button id="more-lineage" hidden>Show more connections</button>
+          <section id="lineage-table" aria-labelledby="connection-heading" hidden><h3 id="connection-heading">Connection evidence</h3><p class="muted small">Choose a numbered connection in the graph or table to highlight its fields and inspect full evidence.</p>
+          <div id="connection-list" class="table-scroll"></div></section>
+        </section>
+      </section>
+    </main>
+    <aside id="evidence" class="evidence" aria-labelledby="evidence-heading" hidden><div id="resize-evidence" class="panel-resizer" role="separator" tabindex="0" aria-label="Resize Reference evidence" aria-controls="evidence" aria-orientation="vertical" title="Drag or use arrow keys to resize. Double-click to reset."></div><div class="panel-content"><div class="section-heading"><h2 id="evidence-heading" tabindex="-1">Reference evidence</h2><button id="return-to-trace" class="quiet">Back to trace</button></div><div id="evidence-content"></div></div></aside>
+  </div>
+  <p id="announcement" class="sr-only" role="status" aria-live="polite"></p>
+  <script id="lineage-data" type="application/json">__LINEAGE_DATA__</script>
+  <script>__REPORT_JS__</script>
+</body>
+</html>

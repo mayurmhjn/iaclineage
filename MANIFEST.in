@@ -1,0 +1,10 @@
+include LICENSE NOTICE CHANGELOG.md CONTRIBUTING.md SECURITY.md uv.lock
+include package.json package-lock.json
+recursive-include docs *.md
+recursive-include scripts *.py *.cjs
+recursive-include tests *.py *.cjs *.md *.json *.tf
+recursive-include .github *.yml
+prune artifacts
+prune .venv
+prune node_modules
+global-exclude __pycache__ *.py[cod]

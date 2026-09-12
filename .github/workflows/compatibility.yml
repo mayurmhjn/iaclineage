@@ -1,0 +1,136 @@
+name: Platform compatibility
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build shared candidate wheel
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      wheel-artifact-id: ${{ steps.upload.outputs.artifact-id }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          python-version: '3.12'
+      - name: Build candidate once
+        run: uv build --wheel --out-dir artifacts/wheel
+      - name: Record wheel checksum
+        working-directory: artifacts/wheel
+        run: sha256sum *.whl > SHA256SUMS
+      - name: Retain shared candidate
+        id: upload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: candidate-wheel-${{ github.sha }}-attempt${{ github.run_attempt }}
+          path: |
+            artifacts/wheel/*.whl
+            artifacts/wheel/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 14
+  test:
+    needs: build
+    name: ${{ matrix.os }} / Python ${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python: ['3.12', '3.13', '3.14']
+    env:
+      IACLINEAGE_BROWSER_CHANNEL: chromium
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '24'
+      - name: Install locked Python dependencies
+        run: uv sync --locked --group dev
+      - name: Download shared candidate wheel
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ needs.build.outputs.wheel-artifact-id }}
+          merge-multiple: true
+          path: artifacts/wheel
+      - name: Python tests and coverage
+        run: >-
+          uv run --no-sync pytest --cov=iaclineage --cov-branch --cov-fail-under=85
+          --cov-report=term-missing --cov-report=xml:artifacts/ci/coverage.xml
+          --junitxml=artifacts/ci/pytest.xml
+      - name: JavaScript traversal tests
+        run: node --test tests/test_lineage_ui.cjs
+      - name: Install browser test dependencies
+        if: matrix.python == '3.14'
+        run: npm ci --ignore-scripts
+      - name: Install Chromium and system dependencies
+        if: matrix.python == '3.14' && runner.os != 'Windows'
+        run: npx playwright install --with-deps chromium
+      - name: Install Chromium on Windows
+        if: matrix.python == '3.14' && runner.os == 'Windows'
+        run: npx playwright install chromium
+      - name: Installed wheel and browser checks
+        if: matrix.python == '3.14'
+        run: uv run --no-sync python scripts/test_wheel.py --wheel-dir artifacts/wheel --browser
+      - name: Installed wheel checks
+        if: matrix.python != '3.14'
+        run: uv run --no-sync python scripts/test_wheel.py --wheel-dir artifacts/wheel
+      - name: Retain Python test and coverage results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: test-results-${{ matrix.os }}-py${{ matrix.python }}-attempt${{ github.run_attempt }}
+          path: |
+            artifacts/ci/pytest.xml
+            artifacts/ci/coverage.xml
+          retention-days: 14
+          if-no-files-found: warn
+  package:
+    name: Package tested beta kit
+    needs: [build, test]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          python-version: '3.12'
+      - name: Download the tested wheel
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ needs.build.outputs.wheel-artifact-id }}
+          merge-multiple: true
+          path: artifacts/wheel
+      - name: Assemble tester kit without rebuilding
+        env:
+          CI_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: >-
+          uv run --no-project --python 3.12 python scripts/build_beta_kit.py
+          --wheel-dir artifacts/wheel --output-dir artifacts/beta-kit
+          --ci-run-url "$CI_RUN_URL"
+      - name: Retain tester kit
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: beta-kit-${{ github.sha }}-attempt${{ github.run_attempt }}
+          path: |
+            artifacts/beta-kit/iaclineage-beta-kit.zip
+            artifacts/beta-kit/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 14

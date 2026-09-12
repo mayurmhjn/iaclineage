@@ -1,0 +1,204 @@
+[
+  {
+    "id": "basic-refs",
+    "root": "fixtures/valid/basic-refs",
+    "expect": {
+      "entities": [{"address": "local.orphan_local"}, {"address": "variable.unused_var"}],
+      "references": [
+        {"source": "output.name_out", "target": "local.base_name", "certainty": "direct", "resolution": "resolved", "path": "outputs.tf"},
+        {"source": "local.base_name", "target": "variable.env", "certainty": "expression"},
+        {"source": "resource.terraform_data.ipv4", "target": "local.cidr_prefix", "source_field": "input"},
+        {"source": "output.input_value", "target": "resource.terraform_data.ipv4", "target_field": "input"},
+        {"source": "output.output_value", "target": "resource.terraform_data.ipv4", "target_field": "output"}
+      ]
+    },
+    "absent": {"references": [{"target": "local.orphan_local"}, {"target": "variable.unused_var"}, {"resolution": "unresolved"}]}
+  },
+  {
+    "id": "local-deep",
+    "root": "fixtures/valid/local-deep",
+    "expect": {
+      "entities": [{"address": "module.a.module.b.module.c.resource.terraform_data.leaf"}],
+      "references": [
+        {"source": "module.a.module.b.module.c", "target": "module.a.module.b.module.c.variable.value", "kind": "module-input"},
+        {"source": "module.a.module.b.module.c", "target": "module.a.module.b.variable.config", "source_field": "value", "target_field": "value.prefix"},
+        {"source": "module.a.module.b", "target": "module.a.variable.config", "source_field": "config.prefix", "target_field": "value.label"},
+        {"source": "output.deepest", "target": "module.a.output.leaf_thing", "resolution": "resolved"}
+      ],
+      "edges": [{"source": "module.a.variable.config", "target": "module.a", "sourceField": "value", "targetField": "config", "kind": "module-input"}]
+    },
+    "absent": {"references": [{"resolution": "unresolved"}]}
+  },
+  {
+    "id": "local-shared",
+    "root": "fixtures/valid/local-shared",
+    "expect": {
+      "entities": [{"address": "module.first.variable.value"}, {"address": "module.second.variable.value"}],
+      "references": [
+        {"source": "output.first_echoed", "target": "module.first.output.echoed", "resolution": "resolved"},
+        {"source": "output.second_echoed", "target": "module.second.output.echoed", "resolution": "resolved"}
+      ]
+    },
+    "absent": {"references": [{"source": "output.first_echoed", "target": "module.second.output.echoed"}]}
+  },
+  {
+    "id": "local-outside",
+    "root": "fixtures/valid/local-outside/root",
+    "expect": {
+      "entities": [{"address": "module.tag.output.full", "path": "../shared/tag/main.tf"}],
+      "references": [{"source": "output.full_name", "target": "module.tag.output.full", "resolution": "resolved"}]
+    }
+  },
+  {
+    "id": "independent",
+    "root": "fixtures/valid/independent",
+    "expect": {
+      "references": [
+        {"source": "proj_a::resource.terraform_data.thing", "target": "proj_a::local.shared_name"},
+        {"source": "proj_b::resource.terraform_data.thing", "target": "proj_b::local.shared_name"}
+      ]
+    },
+    "absent": {"references": [{"source": "proj_a::resource.terraform_data.thing", "target": "proj_b::local.shared_name"}]}
+  },
+  {
+    "id": "expressions",
+    "root": "fixtures/valid/expressions",
+    "expect": {
+      "fields": [{"address": "local.obj", "path": "value.nested.x", "kind": "literal"}],
+      "references": [
+        {"source": "output.direct_ref", "target": "local.obj", "target_field": "value.plain", "certainty": "direct"},
+        {"source": "output.function", "target": "local.obj", "certainty": "expression"},
+        {"source": "output.index_member", "target": "local.lst", "certainty": "expression"},
+        {"source": "output.conditional", "target": "variable.flip", "roles": ["condition"], "certainty": "expression"}
+      ],
+      "conditionals": [{"address": "output.conditional", "field": "value", "roles": ["condition", "true", "false"], "context": []}]
+    }
+  },
+  {
+    "id": "conditional-roles",
+    "files": {"main.tf": "variable \"environment\" {}\nvariable \"context\" {}\nlocals { input = var.environment == null ? var.context.environment : var.environment\nnested = var.environment == null ? (var.context != null ? var.context.environment : null) : null\n}\n"},
+    "expect": {
+      "references": [
+        {"source": "local.input", "target": "variable.environment", "roles": ["condition"], "certainty": "expression", "location": "main.tf:3:18-3:33"},
+        {"source": "local.input", "target": "variable.context", "roles": ["true"], "target_field": "value.environment"},
+        {"source": "local.input", "target": "variable.environment", "roles": ["false"]},
+        {"source": "local.nested", "target": "variable.context", "roles": ["true", "condition"]},
+        {"source": "local.nested", "target": "variable.context", "roles": ["true", "true"]}
+      ],
+      "conditionals": [{"address": "local.nested", "field": "value", "context": ["true"], "roles": ["condition", "true", "false"]}]
+    }
+  },
+  {
+    "id": "unresolved",
+    "root": "fixtures/invalid/unresolved",
+    "expect": {"references": [
+      {"source": "local.broken", "target": "variable.nope", "resolution": "unresolved"},
+      {"source": "output.bad_module", "target": "module.never_called.output.out", "resolution": "unresolved"}
+    ]}
+  },
+  {
+    "id": "missing-module",
+    "root": "fixtures/invalid/missing-module",
+    "diagnostics": ["IAC102"],
+    "expect": {"references": [{"source": "module.ghost", "target": "module.ghost.variable.value", "kind": "module-input", "resolution": "unresolved"}]}
+  },
+  {
+    "id": "nonexistent-module-io",
+    "root": "fixtures/invalid/nonexistent-module-io",
+    "expect": {"references": [
+      {"source": "module.echo", "target": "module.echo.variable.not_a_real_input", "resolution": "unresolved"},
+      {"source": "output.missing_output", "target": "module.echo.output.i_do_not_exist", "resolution": "unresolved"}
+    ]}
+  },
+  {
+    "id": "malformed",
+    "root": "fixtures/invalid/malformed",
+    "diagnostics": ["IAC101"],
+    "expect": {"references": [{"certainty": "direct", "count": 0}]}
+  },
+  {
+    "id": "duplicate",
+    "root": "fixtures/invalid/duplicate",
+    "expect": {"entities": [{"address": "resource.terraform_data.same", "count": 2}]}
+  },
+  {
+    "id": "duplicate-ambiguity",
+    "files": {"main.tf": "resource \"terraform_data\" \"same\" { input = 1 }\nresource \"terraform_data\" \"same\" { input = 2 }\noutput \"x\" { value = terraform_data.same.output }\n"},
+    "expect": {"edges": [{"source": "output.x", "target": "resource.terraform_data.same", "resolution": "ambiguous"}]}
+  },
+  {
+    "id": "cycles",
+    "root": "fixtures/invalid/cycles",
+    "expect": {
+      "references": [{"source": "local.a_ref", "target": "local.b_ref"}, {"source": "local.b_ref", "target": "local.a_ref"}],
+      "entities": [{"address": "module.aa.module.bb.output.y"}]
+    },
+    "absent": {"entities": [{"address": "module.aa.module.bb.module.aa.output.x"}]}
+  },
+  {
+    "id": "cache-absent",
+    "files": {"main.tf": "module \"m\" { source = \"example/test/local\" }\noutput \"x\" { value = module.m.x }\n"},
+    "diagnostics": ["IAC103"],
+    "expect": {"references": [{"source": "output.x", "target": "module.m.output.x", "resolution": "unresolved"}]}
+  },
+  {
+    "id": "cache-malformed",
+    "files": {"main.tf": "module \"m\" { source = \"example/test/local\" }\n", ".terraform/modules/modules.json": "{ invalid"},
+    "diagnostics": ["IAC103"],
+    "expect": {"entities": [{"address": "module.m"}]}
+  },
+  {
+    "id": "cache-missing-directory",
+    "files": {"main.tf": "module \"m\" { source = \"example/test/local\" }\n", ".terraform/modules/modules.json": "{\"Modules\":[{\"Key\":\"m\",\"Source\":\"example/test/local\",\"Dir\":\".terraform/modules/m\"}]}"},
+    "diagnostics": ["IAC103"],
+    "expect": {"entities": [{"address": "module.m"}]}
+  },
+  {
+    "id": "cache-source-mismatch",
+    "files": {"main.tf": "module \"m\" { source = \"example/test/local\" }\n", ".terraform/modules/modules.json": "{\"Modules\":[{\"Key\":\"m\",\"Source\":\"example/other/local\",\"Dir\":\".terraform/modules/m\"}]}", ".terraform/modules/m/main.tf": "output \"x\" { value = 1 }\n"},
+    "diagnostics": ["IAC103"],
+    "expect": {"entities": [{"address": "module.m"}]},
+    "absent": {"entities": [{"address": "module.m.output.x"}]}
+  },
+  {
+    "id": "cache-invalid-path",
+    "files": {"main.tf": "module \"m\" { source = \"example/test/local\" }\n", ".terraform/modules/modules.json": "{\"Modules\":[{\"Key\":\"m\",\"Source\":\"example/test/local\",\"Dir\":\"../../../outside\"}]}"},
+    "diagnostics": ["IAC103"],
+    "expect": {"entities": [{"address": "module.m"}]}
+  },
+  {
+    "id": "cache-nested",
+    "files": {
+      "main.tf": "module \"m\" { source = \"example/test/local\"\n name = var.name }\nvariable \"name\" {}\noutput \"x\" { value = module.m.x }\n",
+      ".terraform/modules/modules.json": "{\"Modules\":[{\"Key\":\"m\",\"Source\":\"example/test/local\",\"Dir\":\".terraform/modules/m\"}]}",
+      ".terraform/modules/m/main.tf": "variable \"name\" {}\nmodule \"child\" { source = \"./child\"\n name = var.name }\noutput \"x\" { value = module.child.x }\n",
+      ".terraform/modules/m/child/main.tf": "variable \"name\" {}\noutput \"x\" { value = var.name }\n"
+    },
+    "expect": {
+      "references": [
+        {"source": "output.x", "target": "module.m.output.x", "resolution": "resolved"},
+        {"source": "module.m.module.child", "target": "module.m.module.child.variable.name", "kind": "module-input", "resolution": "resolved"}
+      ],
+      "edges": [{"source": "module.m.variable.name", "target": "module.m", "kind": "module-input"}]
+    }
+  },
+  {
+    "id": "privacy",
+    "root": "fixtures/privacy",
+    "canaries": ["pk_live_SYNTH_CANARY_9f3a", "synthetic_secret_key_canary", "SYNTH-CANARY-COMMENT-db9c", "SYNTH_CANARY_INDEX_7b1e", "SYNTH_CANARY_HEREDOC_e2f0", "SYNTH_HTML_73aa"],
+    "source_canaries": ["pk_live_SYNTH_CANARY_9f3a", "synthetic_secret_key_canary", "SYNTH_CANARY_INDEX_7b1e", "SYNTH_CANARY_HEREDOC_e2f0", "SYNTH_HTML_73aa", "</script><script>alert('SYNTH')</script>"],
+    "expect": {"references": [{"source": "output.holder_id", "target": "resource.terraform_data.credential_holder", "resolution": "resolved"}]}
+  },
+  {
+    "id": "remote-git-installed",
+    "root": "fixtures/valid/remote-git",
+    "required": false,
+    "prerequisites": [".terraform/modules/modules.json", ".terraform/modules/label/main.tf"],
+    "expect": {"entities": [{"address": "module.label.output.id"}]}
+  },
+  {
+    "id": "conditional-evaluation",
+    "required": false,
+    "unsupported": "Branch evaluation and runtime values are outside the beta source-analysis contract."
+  }
+]
