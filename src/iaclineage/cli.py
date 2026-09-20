@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import tempfile
 import sys
 from collections import Counter
@@ -47,7 +48,7 @@ def build_parser() -> argparse.ArgumentParser:
     # find
     find_parser = subcommands.add_parser("find", help="find a resource, module, or output by name or address")
     find_parser.add_argument("path", type=Path, help="local repository directory")
-    find_parser.add_argument("query", help="exact address or declaration name (final segment)")
+    find_parser.add_argument("query", help="full address, Terraform resource address (TYPE.NAME), or declaration name")
     find_parser.add_argument("--format", choices=["text", "json"], default="text", help="output format")
     find_parser.add_argument("--output", type=Path, help="write output to file instead of stdout")
 
@@ -199,10 +200,22 @@ def _find(args: argparse.Namespace, index: RepositoryIndex, progress: _Progress)
     query = args.query
 
     exact_matches = [e for e in index.entities if e.address == query]
-    segment_matches = [e for e in index.entities if e.address.rsplit(".", maxsplit=1)[-1] == query]
+    canonical_matches = [
+        e for e in index.entities
+        if e.kind == "resource" and re.sub(r"resource\.(?=[^.]+\.[^.]+$)", "", e.address) == query
+    ]
+    segment_matches = [
+        e for e in index.entities
+        if e.address.rsplit(".", maxsplit=1)[-1] == query
+        or e.kind == "provider" and re.sub(
+            r"^(?:module\.[^.]+\.)*provider\.", "", e.address.rpartition("::")[2]
+        ).split(".")[0] == query
+    ]
 
     if exact_matches:
         matches = exact_matches
+    elif canonical_matches:
+        matches = canonical_matches
     else:
         matches = segment_matches
     progress.counts["matches"] = len(matches)
@@ -216,8 +229,9 @@ def _find(args: argparse.Namespace, index: RepositoryIndex, progress: _Progress)
             print(f"No entity found matching '{query}'.")
         return 1
 
-    progress.message(f"Matched {len(matches)} declaration(s) by {'exact address' if exact_matches else 'name'}.")
-    if len(matches) > 1 and not exact_matches:
+    match_kind = "exact address" if exact_matches else "Terraform address" if canonical_matches else "name"
+    progress.message(f"Matched {len(matches)} declaration(s) by {match_kind}.")
+    if len(matches) > 1:
         if args.format == "text":
             print(f"Multiple entities match '{query}':")
             for e in matches:
@@ -229,7 +243,7 @@ def _find(args: argparse.Namespace, index: RepositoryIndex, progress: _Progress)
             for e in matches:
                 result["matches"].append(_entity_dict(e, index))
             _write_output(json.dumps(result, indent=2), args.output)
-            return 0
+            return 1
 
     entity = matches[0]
 

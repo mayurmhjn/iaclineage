@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import os
+from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -64,12 +65,11 @@ _MODULE_META_ARGS = frozenset({
     "depends_on", "lifecycle",
 })
 
-# Attribute values that must not be treated as entity references. ``provider``
-# and ``providers`` point at provider configurations, not resources.
-_SKIP_REFERENCE_ATTRS = frozenset({"provider", "providers"})
+# Module provider maps require child-to-parent configuration mapping.
+_SKIP_REFERENCE_ATTRS = frozenset({"providers"})
 
 # Traversal roots that are language built-ins, not references to declarations.
-_NON_REFERENCE_ROOTS = frozenset({"count", "each", "self", "path"})
+_NON_REFERENCE_ROOTS = frozenset({"count", "each", "self", "path", "terraform"})
 
 _EXCLUDED_DIRECTORY_NAMES = frozenset({".git", ".terraform"})
 
@@ -272,6 +272,11 @@ def _process_block(
         return
     address = prefix + ".".join((block_kind, *(label for label in labels if label is not None)))
 
+    if block_kind == "provider":
+        alias = _attribute_string_value(block, source, "alias")
+        if alias:
+            address += f".{alias}"
+
     if block_kind == "module":
         _add_module_call(
             address, prefix, display_path, source, block, module_dir, repo_root,
@@ -472,13 +477,15 @@ def _extract_references(
     for entity in entities:
         key = (entity.address, entity.source_range.path)
         fields_by_source[key] = fields_by_source.get(key, ()) + entity.fields
+    address_counts = Counter(entity.address for entity in entities)
     for source_address, scope_prefix, display_path, source, expression in expressions:
         traversal = _static_traversal(expression, source)
         if traversal is None:
             continue
         target_local, reference_node = traversal
         target_address = scope_prefix + target_local
-        resolution = "resolved" if target_address in known_addresses else "unresolved"
+        resolution = ("ambiguous" if address_counts[target_address] > 1 else
+                      "resolved" if target_address in known_addresses else "unresolved")
         key = (source_address, target_address, display_path, reference_node.start_byte, reference_node.end_byte)
         if key in seen:
             continue
@@ -681,8 +688,6 @@ def _source_fields(node: Node, path: Path, source: bytes) -> tuple[TerraformFiel
 
 def _static_traversal(expression: Node | _Traversal, source: bytes) -> tuple[str, Node | _Traversal] | None:
     """Return the scope-local target address for a direct traversal, if any."""
-    if _is_provider_argument(expression, source):
-        return None
     children = expression.named_children
     if not children or children[0].type != "variable_expr":
         return None
@@ -693,7 +698,10 @@ def _static_traversal(expression: Node | _Traversal, source: bytes) -> tuple[str
         if node.type == "get_attr" and node.named_children and node.named_children[0].type == "identifier"
     )
     parts = (*base_parts, *attributes)
-    if len(parts) < 2 or parts[0] in _NON_REFERENCE_ROOTS:
+    if parts and _is_provider_argument(expression, source):
+        return ("provider." + ".".join(parts), expression)
+    if (len(parts) < 2 or parts[0] in _NON_REFERENCE_ROOTS
+            or _is_local_iterator(children[0], source)):
         return None
     if parts[0] == "var":
         return ("variable." + parts[1], expression)
@@ -704,8 +712,6 @@ def _static_traversal(expression: Node | _Traversal, source: bytes) -> tuple[str
         return (".".join(parts[:2]), expression)
     if parts[0] == "data" and len(parts) >= 3:
         return (".".join(parts[:3]), expression)
-    if parts[0] == "terraform":
-        return ("terraform", expression)
     return ("resource." + ".".join(parts[:2]), expression)
 
 
@@ -714,7 +720,41 @@ def _is_provider_argument(expression: Node | _Traversal, source: bytes) -> bool:
     if parent is None or parent.type != "attribute":
         return False
     name_node = next((child for child in parent.named_children if child.type == "identifier"), None)
-    return name_node is not None and _node_text(name_node, source) in _SKIP_REFERENCE_ATTRS
+    body = parent.parent
+    block = body.parent if body is not None and body.type == "body" else None
+    return (name_node is not None and _node_text(name_node, source) == "provider"
+            and block is not None and block.type == "block"
+            and _node_text(block.named_children[0], source) in {"resource", "data", "import"})
+
+
+def _is_local_iterator(node: Node, source: bytes) -> bool:
+    """Check enclosing lexical scopes, excluding each iterator's collection."""
+    root = _node_text(node, source)
+    ancestor = node.parent
+    while ancestor is not None:
+        intro = (next((n for n in ancestor.named_children if n.type == "for_intro"), None)
+                 if ancestor.type in {"for_tuple_expr", "for_object_expr"} else None)
+        if intro is not None and node.start_byte >= intro.end_byte:
+            if any(_node_text(n, source) == root for n in intro.named_children if n.type == "identifier"):
+                return True
+        if ancestor.type == "block" and _node_text(ancestor.named_children[0], source) == "dynamic":
+            body = next((n for n in ancestor.named_children if n.type == "body"), None)
+            label = next((n for n in ancestor.named_children if n.type == "string_lit"), None)
+            if body is not None and label is not None:
+                iterator = _string_label(label, source)
+                member = next((n for n in body.named_children
+                               if n.start_byte <= node.start_byte < n.end_byte), None)
+                for attr in body.named_children:
+                    if attr.type == "attribute" and _node_text(attr.named_children[0], source) == "iterator":
+                        value = next((n for n in attr.named_children if n.type == "expression"), None)
+                        iterator = _node_text(value, source) if value is not None else None
+                in_scope = member is not None and (
+                    member.type == "block" and _node_text(member.named_children[0], source) == "content"
+                    or member.type == "attribute" and _node_text(member.named_children[0], source) == "labels")
+                if in_scope and root == iterator:
+                    return True
+        ancestor = ancestor.parent
+    return False
 
 
 def _reference_expressions(node: Node, source: bytes) -> tuple[_Traversal, ...]:
@@ -726,7 +766,8 @@ def _reference_expressions(node: Node, source: bytes) -> tuple[_Traversal, ...]:
             name_node = next((child for child in current.named_children if child.type == "identifier"), None)
             if name_node is not None and _node_text(name_node, source) in _SKIP_REFERENCE_ATTRS:
                 return
-        if current.type == "variable_expr" and current.parent is not None:
+        if (current.type == "variable_expr" and current.parent is not None
+                and not _is_local_iterator(current, source)):
             container = current.parent
             parts = [current]
             sibling = current.next_named_sibling

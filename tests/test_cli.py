@@ -154,8 +154,8 @@ def test_find_progress_explains_match_and_preserves_json(capsys):
     assert "Complete in " in captured.err
 
 
-@pytest.mark.parametrize("fmt, code", [("text", 1), ("json", 0)])
-def test_find_multiple_matches_keep_exit_codes_and_explain_count(tmp_path, capsys, fmt, code):
+@pytest.mark.parametrize("fmt, code", [("text", 1), ("json", 1)])
+def test_find_multiple_matches_use_consistent_exit_codes_and_explain_count(tmp_path, capsys, fmt, code):
     (tmp_path / "main.tf").write_text('variable "same" {}\noutput "same" { value = var.same }', encoding="utf-8")
     assert main(["find", str(tmp_path), "same", "--format", fmt]) == code
     captured = capsys.readouterr()

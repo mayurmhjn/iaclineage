@@ -1,6 +1,7 @@
 # Platform support
 
-IaCLineage 0.1.0b1 supports Python 3.12–3.14 on Windows, Linux, and macOS.
+IaCLineage targets Python 3.12–3.14 on Windows, Linux, and macOS.
+Each release candidate must pass the compatibility workflow on all three platforms.
 The wheel is platform-independent; its parser dependencies must have compatible
 wheels for the target Python version. Reports are self-contained local HTML files.
 
@@ -9,10 +10,10 @@ to use the CLI or open a report.
 
 ## Install
 
-Install from [PyPI](https://pypi.org/project/iaclineage/) after release:
+Install the published version from [PyPI](https://pypi.org/project/iaclineage/):
 
 ```sh
-uv tool install iaclineage==0.1.0b1
+pip install iaclineage
 iaclineage --version
 ```
 

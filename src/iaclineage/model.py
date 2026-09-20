@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -100,6 +101,12 @@ class TerraformEntity:
             return "terraform { ... }"
         if self.kind in {"moved", "import"}:
             return f"{self.kind} {{ ... }}"
+
+        if self.kind == "provider":
+            name = re.sub(
+                r"^(?:module\.[^.]+\.)*provider\.", "", self.address.rpartition("::")[2]
+            ).split(".")[0]
+            return f'provider "{name}" {{ ... }}'
 
         parts = self.address.split(".")
         # Blocks with two labels: resource and data (use the two trailing labels)
