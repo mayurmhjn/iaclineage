@@ -729,7 +729,7 @@ function startReport(data) {
     canvas.style.width = width + "px";
     const svg = svgElement("svg", {width, "aria-hidden": "true", class: "lineage-wires"});
     const defs = svgElement("defs", {}), marker = svgElement("marker", {id: "arrow", viewBox: "0 0 10 10", refX: "9", refY: "5", markerWidth: "6", markerHeight: "6", orient: "auto"});
-    marker.append(svgElement("path", {d: "M0 0L10 5L0 10z", fill: "#006b70"})); defs.append(marker); svg.append(defs);
+    marker.append(svgElement("path", {d: "M0 1L9 5L0 9z", fill: "#006b70"})); defs.append(marker); svg.append(defs);
     const wires = svgElement("g", {}); svg.append(wires); canvas.append(svg);
     ordered.forEach((layer, column) => layers.get(layer).forEach(group => {
       const node = graph.nodes.get(group.id);
@@ -803,9 +803,8 @@ function startReport(data) {
         height = Math.max(height, y);
       }
       wires.replaceChildren();
-      const laneBottom = new Map();
       let railIndex = 0;
-      for (const {connection, ports, start, end, label, rail} of links) {
+      const computedLinks = links.map(({connection, ports, start, end, label, rail}) => {
         const fieldY = (position, row) => {
           const field = rows.get(row);
           return position.y + field.offsetTop + field.querySelector(".endpoint-field").offsetHeight / 2 + 8;
@@ -815,19 +814,48 @@ function startReport(data) {
         let labelX, labelY, path;
         if (rail) {
           labelY = 23 + railIndex++ * 46;
-          labelX = end.column > start.column ? x1 + 54 : start.x + cardWidth / 2;
+          labelX = end.column > start.column ? (x1 + x2) / 2 : start.x + cardWidth / 2;
           path = `M${x1} ${y1}H${x1 + 14}V${labelY}H${x2 - 16}V${y2}H${x2}`;
         } else {
-          labelX = x1 + 54;
-          labelY = Math.max(y1, (laneBottom.get(start.column) || railHeight) + 24);
-          laneBottom.set(start.column, labelY + 24);
-          path = `M${x1} ${y1}C${x1 + 20} ${y1},${x1 + 20} ${labelY},${labelX} ${labelY}C${x2 - 20} ${labelY},${x2 - 20} ${y2},${x2} ${y2}`;
+          const dx = Math.max(28, (x2 - x1) * 0.45);
+          path = `M${x1} ${y1}C${x1 + dx} ${y1},${x2 - dx} ${y2},${x2} ${y2}`;
+          labelX = (x1 + x2) / 2;
+          labelY = (y1 + y2) / 2;
         }
-        label.style.left = (labelX - label.offsetWidth / 2) + "px";
-        label.style.top = (labelY - label.offsetHeight / 2) + "px";
-        height = Math.max(height, labelY + 30);
-        wires.append(svgElement("path", {d: path, class: "lineage-wire" + (connection.edge.certainty !== "direct" || connection.edge.resolution !== "resolved" ? " limit" : ""), "data-edge": connection.edge.id, "marker-end": "url(#arrow)"}));
-        for (const [cx, cy] of [[x1 + 2, y1], [x2 - 2, y2]]) wires.append(svgElement("circle", {cx, cy, r: 3, class: "lineage-port", "data-edge": connection.edge.id}));
+        return {connection, label, x1, y1, x2, y2, labelX, labelY, path, rail, columnKey: `${start.column}->${end.column}`};
+      });
+
+      // Prevent label collisions between adjacent links in the same layer gap
+      const columnGroups = new Map();
+      for (const item of computedLinks) {
+        if (!item.rail) {
+          if (!columnGroups.has(item.columnKey)) columnGroups.set(item.columnKey, []);
+          columnGroups.get(item.columnKey).push(item);
+        }
+      }
+      for (const group of columnGroups.values()) {
+        group.sort((a, b) => a.labelY - b.labelY);
+        for (let i = 1; i < group.length; i++) {
+          const prev = group[i - 1], curr = group[i];
+          if (curr.labelY - prev.labelY < 28) {
+            curr.labelY = prev.labelY + 28;
+          }
+        }
+      }
+
+      for (const item of computedLinks) {
+        item.label.style.left = (item.labelX - item.label.offsetWidth / 2) + "px";
+        item.label.style.top = (item.labelY - item.label.offsetHeight / 2) + "px";
+        height = Math.max(height, item.labelY + 30, item.y1 + 20, item.y2 + 20);
+        wires.append(svgElement("path", {
+          d: item.path,
+          class: "lineage-wire" + (item.connection.edge.certainty !== "direct" || item.connection.edge.resolution !== "resolved" ? " limit" : ""),
+          "data-edge": item.connection.edge.id,
+          "marker-end": "url(#arrow)"
+        }));
+        for (const [cx, cy] of [[item.x1 + 2, item.y1], [item.x2 - 2, item.y2]]) {
+          wires.append(svgElement("circle", {cx, cy, r: 3, class: "lineage-port", "data-edge": item.connection.edge.id}));
+        }
       }
       canvas.style.height = height + "px"; svg.setAttribute("height", height);
       syncEdgeSelection();
