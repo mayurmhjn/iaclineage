@@ -5,7 +5,18 @@ All notable changes to IaCLineage are documented here.
 This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and uses Semantic Versioning concepts with Python PEP 440 pre-release versions.
 
-## [0.1.0b2] - Unreleased
+## [0.1.0b3] - [Unreleased]
+
+### Added
+
+- Demo walkthrough video and GIF in `README.md` showcasing CLI scan execution, interactive lineage filtering, multi-hop remote module navigation, and source inspection.
+
+### Fixed
+
+- Fixed lineage connection arrowheads to align squarely with card input ports with zero vertical slope entry.
+- Prevented overlapping numbered connection badges across shared column lanes with dynamic vertical de-collision spacing.
+
+## [0.1.0b2] - 2026-09-20
 
 ### Fixed
 

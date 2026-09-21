@@ -5,11 +5,9 @@ checkout. IaCLineage provides a Python CLI and a self-contained HTML report with
 searchable declarations, field-level lineage, and source locations.
 
 No Terraform execution, cloud credentials, server, or network access is required
-to analyze source or open a report. This checkout prepares **0.1.0b2 (beta)**.
+to analyze source or open a report. This checkout prepares **0.1.0b3 (beta)**.
 
-<!-- Demo GIF: add docs/images/demo.gif, then uncomment the image below.
-![IaCLineage: search a declaration and trace its dependencies](https://raw.githubusercontent.com/mayurmhjn/iaclineage/main/docs/images/demo.gif)
--->
+<img src="docs/images/demo.gif" alt="IaCLineage: search a declaration and trace its dependencies"/>
 
 ## Installation
 

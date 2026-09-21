@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "iaclineage"
-version = "0.1.0b2"
+version = "0.1.0b3"
 description = "Local Terraform source explorer"
 readme = "README.md"
 license = "Apache-2.0"
