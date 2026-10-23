@@ -451,6 +451,7 @@ def test_trace_depth_limits_hops_and_both_is_the_default(tmp_path):
     entry = result["upstream"][0]
     assert entry["resolution"] == "resolved"
     assert entry["location"] == "app/main.tf:3:38-3:50"
+    assert entry["field"] == "name"
 
 
 def test_trace_stops_at_unresolved_targets_and_cycles(tmp_path):
@@ -477,9 +478,9 @@ def test_trace_text_output_lists_hops_by_direction(tmp_path, capsys):
     assert capsys.readouterr().out.splitlines() == [
         "module.app.variable.app_name  app/main.tf:1:1-1:23",
         "Upstream (A -> B means A uses B):",
-        "  1  module.app.variable.app_name -> module.app (module-input, resolved, main.tf:5:3-5:11)",
+        "  1  module.app.variable.app_name -> module.app (module-input, resolved, main.tf:5:3-5:11, field app_name)",
         "Downstream (A -> B means A uses B):",
-        "  1  module.app.resource.aws_thing.this -> module.app.variable.app_name (reference, resolved, app/main.tf:3:38-3:50)",
+        "  1  module.app.resource.aws_thing.this -> module.app.variable.app_name (reference, resolved, app/main.tf:3:38-3:50, field name)",
     ]
 
 
@@ -636,6 +637,7 @@ def test_trace_upstream_from_a_whole_module_reference_enters_its_outputs(tmp_pat
         (5, "module.b.variable.v", "module.b", "module-input"),
     ]
     assert result["upstream"][1]["location"] == "mod/main.tf:3:1-3:38"
+    assert result["upstream"][1]["field"] is None
 
 
 def test_trace_skips_a_variable_validating_itself(tmp_path, capsys):
@@ -655,3 +657,16 @@ def test_report_fail_on_ignores_repeated_states(tmp_path, capsys):
     assert main(["report", str(tmp_path / "src"), "--format", "json", "--output", str(tmp_path / "r.json"),
                  "--fail-on", "unresolved,unresolved"]) == 1
     assert "warning: 1 unresolved reference(s); failing" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(("command", "query"), [
+    ("find", "var.name"), ("trace", "var.name"), ("find", "prod::var.name"),
+])
+def test_queries_accept_terraform_var_syntax(tmp_path, capsys, command, query):
+    _write_tree(tmp_path / "prod", {"main.tf": 'variable "name" {}\noutput "x" { value = var.name }\n'})
+    root = tmp_path if query.startswith("prod::") else tmp_path / "prod"
+
+    assert main([command, str(root), query, "--format", "json"]) == 0
+    result = json.loads(capsys.readouterr().out)
+    address = result["match"]["address"] if command == "find" else result["address"]
+    assert address.endswith("variable.name")

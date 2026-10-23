@@ -5,13 +5,15 @@ All notable changes to IaCLineage are documented here.
 This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and uses Semantic Versioning concepts with Python PEP 440 pre-release versions.
 
-## [Unreleased]
+## [0.1.0] - Unreleased
 
 ### Added
 
 - `trace` command that follows references upstream, downstream, or both from one declaration, with optional `--depth` and JSON output.
 - `unused` command that lists variables, locals, and child-module outputs with no references. It exits `1` when it finds any.
 - `report --fail-on unresolved,ambiguous` exits `1` after writing the report when references are in those states.
+- `find` and `trace` accept `var.NAME` for variables.
+- Agent skill in `skills/iaclineage` for coding agents, installable with `npx skills add mayurmhjn/iaclineage`.
 
 ### Changed
 

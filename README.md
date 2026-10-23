@@ -5,7 +5,7 @@ checkout. IaCLineage provides a Python CLI and a self-contained HTML report with
 searchable declarations, field-level lineage, and source locations.
 
 No Terraform execution, cloud credentials, server, or network access is required
-to analyze source or open a report. The current version is 0.1.0b3, a beta.
+to analyze source or open a report. The current version is 0.1.0.
 
 <img src="docs/images/demo.gif" alt="IaCLineage: search a declaration and trace its dependencies"/>
 
@@ -65,12 +65,14 @@ into those modules unresolved. The available local source can still be inspected
 ## Find declarations
 
 `find` accepts a full IaCLineage address, a standard Terraform resource address,
-or a declaration's final name. Exact full addresses take precedence.
+`var.NAME` for a variable, or a declaration's final name. Exact full addresses
+take precedence.
 
 ```sh
 iaclineage find . aws_vpc.main
 iaclineage find . resource.aws_vpc.main
 iaclineage find . main
+iaclineage find . var.region
 iaclineage find . provider.aws.west
 iaclineage find . aws --format json
 iaclineage find . aws_vpc.main --format json --output /path/to/results.json
@@ -111,19 +113,19 @@ iaclineage trace . aws_vpc.main --format json --output /path/to/trace.json
 
 `--direction up` follows what the declaration uses, `down` follows what uses
 it, and `both` (the default) prints both lists. Each hop shows its depth, the
-two declarations, the edge kind, the resolution state, and the source range of
-the reference. `A -> B` always means A uses B. `--depth N` stops after N hops;
+two declarations, the edge kind, the resolution state, the source range of the
+reference, and the field or module argument that holds it. `A -> B` always means A uses B. `--depth N` stops after N hops;
 without it the trace continues until nothing new is reachable, and a cycle is
 listed once instead of being followed again.
 
 When a trace passes through a module call, it continues only through the
-argument it arrived by, so tracing one input does not pull in the module's other
-inputs. A reference to the whole module object, such as `module.app`,
-`module.app[*].id`, or `depends_on = [module.app]`, connects the call to its
-outputs with a `module-output` hop. A trace stops at unresolved targets. It
-works on whole declarations; to narrow a trace to one field, use the interactive
-report. Like `find`, `trace` exits `1` when the query does not match exactly one
-declaration.
+argument it arrived by and to readers of the whole module, so tracing one input
+does not pull in the module's other inputs. A reference to the whole module
+object, such as `module.app`, `module.app[*].id`, or `depends_on =
+[module.app]`, connects the call to its outputs with a `module-output` hop. A
+trace stops at unresolved targets. It works on whole declarations; to narrow a
+trace to one field, use the interactive report. Like `find`, `trace` exits `1`
+when the query does not match exactly one declaration.
 
 ## Reports
 
@@ -186,11 +188,27 @@ has one of the listed resolution states:
 iaclineage report . --format json --output /path/to/reports/lineage.json --fail-on unresolved,ambiguous
 ```
 
-Accepted states are `unresolved` and `ambiguous`. References into remote
-modules whose source has not been downloaded stay unresolved, so run
-`terraform get` first when the configuration uses them. Provider aliases that a
-child module receives through a `providers` map also stay unresolved, because
-IaCLineage does not follow those mappings.
+Accepted states are `unresolved` and `ambiguous`. References into remote modules
+whose source has not been downloaded stay unresolved, so run `terraform get`
+first when the configuration uses them. Provider aliases that a child module
+receives through a `providers` map also stay unresolved, because IaCLineage does
+not follow those mappings. Attribute names in `lifecycle { ignore_changes =
+[...] }` and the old address in a `moved` block's `from` are reported as
+unresolved too.
+
+## Use with coding agents
+
+The `skills/iaclineage` folder is an agent skill. It tells coding agents such as
+Claude Code and Codex when to run IaCLineage, which commands answer which
+questions, and how to read the results. Install it with the
+[skills CLI](https://skills.sh/):
+
+```sh
+npx skills add mayurmhjn/iaclineage
+```
+
+The skill does not install IaCLineage itself. Install the CLI as described in
+[Installation](#installation).
 
 ## Analysis scope
 

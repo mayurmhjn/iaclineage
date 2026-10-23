@@ -112,7 +112,7 @@ wheels = [
 
 [[package]]
 name = "iaclineage"
-version = "0.1.0b3"
+version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "tree-sitter" },

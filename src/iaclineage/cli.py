@@ -254,8 +254,10 @@ def _summarize_index(index: RepositoryIndex, progress: _Progress) -> None:
 def _unique_match(args: argparse.Namespace, index: RepositoryIndex, progress: _Progress) -> TerraformEntity | None:
     """Return the single declaration matching the query, or report why there is none."""
     query = args.query
+    # Accept Terraform's `var.NAME` spelling for `variable.NAME` addresses.
+    addresses = {query, re.sub(r"(^|::)var\.", r"\1variable.", query)}
 
-    exact_matches = [e for e in index.entities if e.address == query]
+    exact_matches = [e for e in index.entities if e.address in addresses]
     canonical_matches = [
         e for e in index.entities
         if e.kind == "resource" and re.sub(r"resource\.(?=[^.]+\.[^.]+$)", "", e.address) == query
@@ -355,8 +357,9 @@ def _trace(args: argparse.Namespace, index: RepositoryIndex, progress: _Progress
     for direction in directions:
         print(f"{direction.capitalize()} (A -> B means A uses B):")
         for hop in result[direction]:
+            field = f", field {hop['field']}" if hop["field"] else ""
             print(f"  {hop['depth']}  {hop['consumer']} -> {hop['dependency']} "
-                  f"({hop['kind']}, {hop['resolution']}, {hop['location']})")
+                  f"({hop['kind']}, {hop['resolution']}, {hop['location']}{field})")
         if not result[direction]:
             print("  none")
     return 0
@@ -365,7 +368,7 @@ def _trace(args: argparse.Namespace, index: RepositoryIndex, progress: _Progress
 def _trace_hops(index: RepositoryIndex, start: str, upstream: bool, max_depth: int | None) -> list[dict]:
     """Walk references breadth-first from ``start``, listing each hop once."""
     modules = {entity.address for entity in index.entities if entity.kind == "module"}
-    # Each edge is (consumer, dependency, kind, resolution, location, call, port).
+    # Each edge is (consumer, dependency, kind, resolution, location, field, call, port).
     # Edges point from consumer to dependency, as in the interactive report, so
     # module-input bindings (stored call-to-child) are flipped. `call` and `port`
     # name the module call and argument an edge passes through, if any.
@@ -383,14 +386,14 @@ def _trace_hops(index: RepositoryIndex, start: str, upstream: bool, max_depth: i
         call = reference.source_address if reference.source_address in modules else None
         port = re.split(r"[.\[]", reference.source_field, maxsplit=1)[0] if call else None
         edges.append((consumer, dependency, reference.kind, reference.resolution,
-                      reference.source_range.display(), call, port))
+                      reference.source_range.display(), reference.source_field or None, call, port))
     # Reading a whole module object (module.app, module.app[*].id, depends_on)
     # reads its outputs, so link those calls to their outputs.
     for entity in index.entities:
         call, _, _ = entity.address.rpartition(".output.")
         if entity.kind == "output" and call in whole_module_reads:
             edges.append((call, entity.address, "module-output", "resolved",
-                          entity.source_range.display(), call, _OUTPUTS))
+                          entity.source_range.display(), None, call, _OUTPUTS))
 
     adjacent = defaultdict(list)
     for edge in edges:
@@ -410,7 +413,7 @@ def _trace_hops(index: RepositoryIndex, start: str, upstream: bool, max_depth: i
         next_frontier = []
         for address, via in frontier:
             for edge in adjacent[address]:
-                consumer, dependency, kind, resolution, location, call, port = edge
+                consumer, dependency, kind, resolution, location, field, call, port = edge
                 if edge in listed or (via is not None and call == address and port != via):
                     continue
                 listed.add(edge)
@@ -421,6 +424,7 @@ def _trace_hops(index: RepositoryIndex, start: str, upstream: bool, max_depth: i
                     "kind": kind,
                     "resolution": resolution,
                     "location": location,
+                    "field": field,
                 })
                 there = dependency if upstream else consumer
                 state = (there, port if call == there else None)
