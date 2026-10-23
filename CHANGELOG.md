@@ -5,7 +5,7 @@ All notable changes to IaCLineage are documented here.
 This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and uses Semantic Versioning concepts with Python PEP 440 pre-release versions.
 
-## [0.1.0] - Unreleased
+## [0.1.0] - 2026-10-24
 
 ### Added
 
