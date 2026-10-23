@@ -564,7 +564,7 @@ function startReport(data) {
     function append(parent, conditional) {
       const section = element("details", undefined, "conditional-details");
       section.append(element("summary", "Conditional expression"),
-        element("p", "Selected branch: Unknown — expression not evaluated.", "muted"));
+        element("p", "Selected branch: Unknown. The expression was not evaluated.", "muted"));
       for (const part of conditional.parts) {
         const row = element("div", undefined, "conditional-part");
         row.append(element("strong", conditionalRoleLabel(part.role)));
@@ -666,7 +666,7 @@ function startReport(data) {
       ["Source location", edge.location], ["Resolution", edge.resolution === "resolved" ? "Declaration resolved" : edge.resolution === "ambiguous" ? "Ambiguous: multiple declarations" : "Unresolved declaration"],
       ["Relationship", relationship.label],
       ...(conditionalRoleText(edge) ? [["Conditional role", conditionalRoleText(edge)],
-        ["Selected branch", "Unknown — expression not evaluated"]] : []),
+        ["Selected branch", "Unknown (expression not evaluated)"]] : []),
     ]), copyLocationButton(edge.location));
     if (edge.usage) {
       const source = element("pre"); source.append(code(edge.usage)); container.append(source);

@@ -9,12 +9,16 @@ and uses Semantic Versioning concepts with Python PEP 440 pre-release versions.
 
 ### Added
 
-- Demo walkthrough video and GIF in `README.md` showcasing CLI scan execution, interactive lineage filtering, multi-hop remote module navigation, and source inspection.
+- Demo GIF in `README.md` covering a CLI scan, lineage filtering, navigation through downloaded modules, and source inspection.
+
+### Changed
+
+- Remove the unused `pyyaml` dependency.
 
 ### Fixed
 
-- Fixed lineage connection arrowheads to align squarely with card input ports with zero vertical slope entry.
-- Prevented overlapping numbered connection badges across shared column lanes with dynamic vertical de-collision spacing.
+- Lineage arrowheads now meet card input ports horizontally.
+- Numbered connection badges no longer overlap when connections share a column lane.
 
 ## [0.1.0b2] - 2026-09-20
 
