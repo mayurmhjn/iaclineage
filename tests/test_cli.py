@@ -372,3 +372,286 @@ def test_unused_treats_whole_module_references_as_using_its_outputs(tmp_path, ca
 
     assert main(["unused", str(tmp_path)]) == 0
     assert "module.app.output.id" not in capsys.readouterr().out
+
+
+_TRACE_FILES = {
+    "main.tf": (
+        'variable "name" {}\n'
+        'variable "size" {}\n'
+        'module "app" {\n'
+        '  source   = "./app"\n'
+        '  app_name = var.name\n'
+        '  app_size = var.size\n'
+        '}\n'
+        'output "app_id" { value = module.app.id }\n'
+    ),
+    "app/main.tf": (
+        'variable "app_name" {}\n'
+        'variable "app_size" {}\n'
+        'resource "aws_thing" "this" { name = var.app_name }\n'
+        'output "id" { value = aws_thing.this.id }\n'
+    ),
+}
+
+
+def _trace_json(root: Path, *arguments: str) -> dict:
+    output = StringIO()
+    with redirect_stdout(output):
+        assert main(["trace", str(root), *arguments, "--format", "json"]) == 0
+    return json.loads(output.getvalue())
+
+
+def _hops(entries: list[dict]) -> list[tuple[int, str, str, str]]:
+    return [(e["depth"], e["consumer"], e["dependency"], e["kind"]) for e in entries]
+
+
+def test_trace_upstream_follows_only_the_bound_module_argument(tmp_path):
+    _write_tree(tmp_path, _TRACE_FILES)
+
+    result = _trace_json(tmp_path, "output.app_id", "--direction", "up")
+
+    assert result["address"] == "output.app_id"
+    assert "downstream" not in result
+    assert _hops(result["upstream"]) == [
+        (1, "output.app_id", "module.app.output.id", "reference"),
+        (2, "module.app.output.id", "module.app.resource.aws_thing.this", "reference"),
+        (3, "module.app.resource.aws_thing.this", "module.app.variable.app_name", "reference"),
+        (4, "module.app.variable.app_name", "module.app", "module-input"),
+        (5, "module.app", "variable.name", "reference"),
+    ]
+
+
+def test_trace_downstream_follows_only_the_matching_module_input(tmp_path):
+    _write_tree(tmp_path, _TRACE_FILES)
+
+    result = _trace_json(tmp_path, "variable.name", "--direction", "down")
+
+    assert "upstream" not in result
+    assert _hops(result["downstream"]) == [
+        (1, "module.app", "variable.name", "reference"),
+        (2, "module.app.variable.app_name", "module.app", "module-input"),
+        (3, "module.app.resource.aws_thing.this", "module.app.variable.app_name", "reference"),
+        (4, "module.app.output.id", "module.app.resource.aws_thing.this", "reference"),
+        (5, "output.app_id", "module.app.output.id", "reference"),
+    ]
+
+
+def test_trace_depth_limits_hops_and_both_is_the_default(tmp_path):
+    _write_tree(tmp_path, _TRACE_FILES)
+
+    result = _trace_json(tmp_path, "module.app.resource.aws_thing.this", "--depth", "1")
+
+    assert result["depth"] == 1
+    assert _hops(result["upstream"]) == [
+        (1, "module.app.resource.aws_thing.this", "module.app.variable.app_name", "reference"),
+    ]
+    assert _hops(result["downstream"]) == [
+        (1, "module.app.output.id", "module.app.resource.aws_thing.this", "reference"),
+    ]
+    entry = result["upstream"][0]
+    assert entry["resolution"] == "resolved"
+    assert entry["location"] == "app/main.tf:3:38-3:50"
+
+
+def test_trace_stops_at_unresolved_targets_and_cycles(tmp_path):
+    _write_tree(tmp_path, {"main.tf": (
+        'locals {\n  a = local.b\n  b = local.a\n  c = var.missing\n}\n'
+        'output "x" { value = [local.a, local.c] }\n'
+    )})
+
+    result = _trace_json(tmp_path, "output.x", "--direction", "up")
+
+    assert [(e["consumer"], e["dependency"], e["resolution"]) for e in result["upstream"]] == [
+        ("output.x", "local.a", "resolved"),
+        ("output.x", "local.c", "resolved"),
+        ("local.a", "local.b", "resolved"),
+        ("local.c", "variable.missing", "unresolved"),
+        ("local.b", "local.a", "resolved"),
+    ]
+
+
+def test_trace_text_output_lists_hops_by_direction(tmp_path, capsys):
+    _write_tree(tmp_path, _TRACE_FILES)
+
+    assert main(["trace", str(tmp_path), "app_name", "--depth", "1"]) == 0
+    assert capsys.readouterr().out.splitlines() == [
+        "module.app.variable.app_name  app/main.tf:1:1-1:23",
+        "Upstream (A -> B means A uses B):",
+        "  1  module.app.variable.app_name -> module.app (module-input, resolved, main.tf:5:3-5:11)",
+        "Downstream (A -> B means A uses B):",
+        "  1  module.app.resource.aws_thing.this -> module.app.variable.app_name (reference, resolved, app/main.tf:3:38-3:50)",
+    ]
+
+
+def test_trace_reports_when_there_are_no_references(tmp_path, capsys):
+    _write_tree(tmp_path, {"main.tf": 'variable "lonely" {}\n'})
+
+    assert main(["trace", str(tmp_path), "lonely"]) == 0
+    assert capsys.readouterr().out.splitlines() == [
+        "variable.lonely  main.tf:1:1-1:21",
+        "Upstream (A -> B means A uses B):",
+        "  none",
+        "Downstream (A -> B means A uses B):",
+        "  none",
+    ]
+
+
+@pytest.mark.parametrize(("query", "message"), [
+    ("nothing", "No entity found matching 'nothing'."),
+    ("dup", "Multiple entities match 'dup':"),
+])
+def test_trace_needs_a_unique_match(tmp_path, capsys, query, message):
+    _write_tree(tmp_path, {"main.tf": 'variable "dup" {}\nlocals {\n  dup = 1\n}\n'})
+
+    assert main(["trace", str(tmp_path), query]) == 1
+    assert message in capsys.readouterr().out
+
+
+def test_trace_writes_json_to_output_file(tmp_path):
+    _write_tree(tmp_path / "src", _TRACE_FILES)
+    output = tmp_path / "trace.json"
+
+    assert main(["trace", str(tmp_path / "src"), "variable.size", "--format", "json",
+                 "--output", str(output)]) == 0
+    result = json.loads(output.read_text(encoding="utf-8"))
+    assert result["query"] == "variable.size"
+    assert result["depth"] is None
+    assert result["upstream"] == []
+    assert _hops(result["downstream"])[:2] == [
+        (1, "module.app", "variable.size", "reference"),
+        (2, "module.app.variable.app_size", "module.app", "module-input"),
+    ]
+
+
+@pytest.mark.parametrize(("depth", "message"), [
+    ("0", "depth must be 1 or more"), ("two", "depth must be a whole number"),
+])
+def test_trace_rejects_invalid_depth(tmp_path, capsys, depth, message):
+    with pytest.raises(SystemExit) as error:
+        main(["trace", str(tmp_path), "x", "--depth", depth])
+    assert error.value.code == 2
+    assert message in capsys.readouterr().err
+
+
+def test_trace_lists_each_reference_once_when_a_module_is_reached_twice(tmp_path):
+    _write_tree(tmp_path, {
+        "main.tf": (
+            'locals {\n  shared = 1\n}\n'
+            'module "app" {\n  source = "./app"\n  first = local.shared\n  second = local.shared\n}\n'
+            'output "all" { value = module.app }\n'
+        ),
+        "app/main.tf": 'variable "first" {}\nvariable "second" {}\n',
+    })
+
+    result = _trace_json(tmp_path, "local.shared", "--direction", "down")
+
+    assert _hops(result["downstream"]) == [
+        (1, "module.app", "local.shared", "reference"),
+        (1, "module.app", "local.shared", "reference"),
+        (2, "module.app.variable.first", "module.app", "module-input"),
+        (2, "output.all", "module.app", "reference"),
+        (2, "module.app.variable.second", "module.app", "module-input"),
+    ]
+
+
+_SHARED_MODULE = (
+    'variable "v" {}\n'
+    'resource "aws_y" "y" { name = var.v }\n'
+    'output "out" { value = aws_y.y.name }\n'
+    'output "out2" { value = aws_y.y.id }\n'
+)
+
+
+def test_unused_reports_shared_module_declarations_only_when_every_call_ignores_them(tmp_path, capsys):
+    _write_tree(tmp_path, {
+        "main.tf": (
+            'module "a" {\n  source = "./mod"\n  v = "1"\n}\n'
+            'module "b" {\n  source = "./mod"\n  v = "2"\n}\n'
+            'output "from_a" { value = module.a.out }\n'
+        ),
+        "mod/main.tf": _SHARED_MODULE,
+    })
+
+    assert main(["unused", str(tmp_path)]) == 1
+    assert capsys.readouterr().out.splitlines() == [
+        "module.a.output.out2 (output) at mod/main.tf:4:1-4:37",
+        "module.b.output.out2 (output) at mod/main.tf:4:1-4:37",
+    ]
+
+
+def test_unused_does_not_treat_depends_on_or_moved_as_reading_module_outputs(tmp_path, capsys):
+    _write_tree(tmp_path, {
+        "main.tf": (
+            'module "a" {\n  source = "./mod"\n  v = "1"\n}\n'
+            'output "from_a" { value = module.a.out }\n'
+            'resource "aws_x" "r" {\n  depends_on = [module.a]\n}\n'
+            'moved {\n  from = module.old\n  to = module.a\n}\n'
+        ),
+        "mod/main.tf": _SHARED_MODULE,
+    })
+
+    assert main(["unused", str(tmp_path)]) == 1
+    assert capsys.readouterr().out.splitlines() == [
+        "module.a.output.out2 (output) at mod/main.tf:4:1-4:37",
+    ]
+
+
+_WHOLE_MODULE_FILES = {
+    "main.tf": (
+        'module "b" {\n  source = "./mod"\n  count = 2\n  v = "x"\n}\n'
+        'output "whole" { value = module.b }\n'
+        'output "splat" { value = module.b[*].out2 }\n'
+    ),
+    "mod/main.tf": _SHARED_MODULE,
+}
+
+
+def test_trace_downstream_continues_from_outputs_to_whole_module_readers(tmp_path):
+    _write_tree(tmp_path, _WHOLE_MODULE_FILES)
+
+    result = _trace_json(tmp_path, "module.b.resource.aws_y.y", "--direction", "down")
+
+    assert _hops(result["downstream"]) == [
+        (1, "module.b.output.out", "module.b.resource.aws_y.y", "reference"),
+        (1, "module.b.output.out2", "module.b.resource.aws_y.y", "reference"),
+        (2, "module.b", "module.b.output.out", "module-output"),
+        (2, "module.b", "module.b.output.out2", "module-output"),
+        (3, "output.splat", "module.b", "reference"),
+        (3, "output.whole", "module.b", "reference"),
+    ]
+
+
+def test_trace_upstream_from_a_whole_module_reference_enters_its_outputs(tmp_path):
+    _write_tree(tmp_path, _WHOLE_MODULE_FILES)
+
+    result = _trace_json(tmp_path, "output.whole", "--direction", "up")
+
+    assert _hops(result["upstream"]) == [
+        (1, "output.whole", "module.b", "reference"),
+        (2, "module.b", "module.b.output.out", "module-output"),
+        (2, "module.b", "module.b.output.out2", "module-output"),
+        (3, "module.b.output.out", "module.b.resource.aws_y.y", "reference"),
+        (3, "module.b.output.out2", "module.b.resource.aws_y.y", "reference"),
+        (4, "module.b.resource.aws_y.y", "module.b.variable.v", "reference"),
+        (5, "module.b.variable.v", "module.b", "module-input"),
+    ]
+    assert result["upstream"][1]["location"] == "mod/main.tf:3:1-3:38"
+
+
+def test_trace_skips_a_variable_validating_itself(tmp_path, capsys):
+    _write_tree(tmp_path, {"main.tf": (
+        'variable "x" {\n  validation {\n    condition = var.x != ""\n'
+        '    error_message = "empty"\n  }\n}\n'
+    )})
+
+    result = _trace_json(tmp_path, "variable.x")
+
+    assert result["upstream"] == [] and result["downstream"] == []
+
+
+def test_report_fail_on_ignores_repeated_states(tmp_path, capsys):
+    _write_tree(tmp_path / "src", {"main.tf": 'output "x" { value = var.missing }\n'})
+
+    assert main(["report", str(tmp_path / "src"), "--format", "json", "--output", str(tmp_path / "r.json"),
+                 "--fail-on", "unresolved,unresolved"]) == 1
+    assert "warning: 1 unresolved reference(s); failing" in capsys.readouterr().err

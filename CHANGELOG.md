@@ -5,17 +5,23 @@ All notable changes to IaCLineage are documented here.
 This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and uses Semantic Versioning concepts with Python PEP 440 pre-release versions.
 
-## [0.1.0b3] - [Unreleased]
+## [Unreleased]
 
 ### Added
 
-- Demo GIF in `README.md` covering a CLI scan, lineage filtering, navigation through downloaded modules, and source inspection.
+- `trace` command that follows references upstream, downstream, or both from one declaration, with optional `--depth` and JSON output.
 - `unused` command that lists variables, locals, and child-module outputs with no references. It exits `1` when it finds any.
 - `report --fail-on unresolved,ambiguous` exits `1` after writing the report when references are in those states.
 
 ### Changed
 
 - Remove the unused `pyyaml` dependency, including from the TestPyPI install commands in the tester guide.
+
+## [0.1.0b3] - 2026-09-21
+
+### Added
+
+- Demo GIF in `README.md` covering a CLI scan, lineage filtering, navigation through downloaded modules, and source inspection.
 
 ### Fixed
 

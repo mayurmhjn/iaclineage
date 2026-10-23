@@ -98,6 +98,33 @@ Multiple matches include every declaration and its location. Refine the query
 when possible. Progress and diagnostics go to stderr, leaving stdout suitable
 for JSON consumers. Use `--color never` before the command to disable color.
 
+## Trace lineage
+
+`trace` follows references from one declaration across files and modules. It
+accepts the same queries as `find`.
+
+```sh
+iaclineage trace . output.app_id --direction up
+iaclineage trace . variable.region --direction down --depth 2
+iaclineage trace . aws_vpc.main --format json --output /path/to/trace.json
+```
+
+`--direction up` follows what the declaration uses, `down` follows what uses
+it, and `both` (the default) prints both lists. Each hop shows its depth, the
+two declarations, the edge kind, the resolution state, and the source range of
+the reference. `A -> B` always means A uses B. `--depth N` stops after N hops;
+without it the trace continues until nothing new is reachable, and a cycle is
+listed once instead of being followed again.
+
+When a trace passes through a module call, it continues only through the
+argument it arrived by, so tracing one input does not pull in the module's other
+inputs. A reference to the whole module object, such as `module.app`,
+`module.app[*].id`, or `depends_on = [module.app]`, connects the call to its
+outputs with a `module-output` hop. A trace stops at unresolved targets. It
+works on whole declarations; to narrow a trace to one field, use the interactive
+report. Like `find`, `trace` exits `1` when the query does not match exactly one
+declaration.
+
 ## Reports
 
 ```sh
@@ -142,11 +169,13 @@ when it finds anything and `0` when it finds nothing, so it can run in CI.
 
 A variable counts as unused when a module call sets it but nothing inside the
 module reads it. References from a variable's own `validation` block do not
-count. A reference to a whole module object, such as `module.app`, uses all of
-that module's outputs. Root module outputs are skipped because they are read
-from outside the configuration, and so are declarations inside downloaded
-modules under `.terraform`. IaCLineage only sees static references, so check
-each result before deleting it.
+count. A reference to a whole module object, such as `module.app` or
+`module.app[*].id`, uses all of that module's outputs; `depends_on` and `moved`
+blocks do not. When several calls share one module source, a declaration in it
+is reported only if no call uses it. Root module outputs are skipped because
+they are read from outside the configuration, and so are declarations inside
+downloaded modules under `.terraform`. IaCLineage only sees static references,
+so check each result before deleting it.
 
 ## CI checks
 
@@ -159,7 +188,9 @@ iaclineage report . --format json --output /path/to/reports/lineage.json --fail-
 
 Accepted states are `unresolved` and `ambiguous`. References into remote
 modules whose source has not been downloaded stay unresolved, so run
-`terraform get` first when the configuration uses them.
+`terraform get` first when the configuration uses them. Provider aliases that a
+child module receives through a `providers` map also stay unresolved, because
+IaCLineage does not follow those mappings.
 
 ## Analysis scope
 
