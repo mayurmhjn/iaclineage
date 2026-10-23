@@ -1,4 +1,4 @@
-"""Write simple HTML or JSON reports with per‑file scoping."""
+"""Write simple HTML or JSON reports with per-file scoping."""
 
 from __future__ import annotations
 
@@ -68,7 +68,7 @@ def _write_report(
 def _render_html(index: RepositoryIndex) -> str:
     rows = []
     for entity in index.entities:
-        # Filter references by both address and path (per‑file scoping)
+        # Filter references by both address and path (per-file scoping)
         refs = [
             r for r in index.references
             if r.source_address == entity.address

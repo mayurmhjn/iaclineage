@@ -84,19 +84,10 @@ class TerraformEntity:
     def snippet(self) -> str:
         """Return a structural snippet that cannot reveal body values.
 
-        The label(s) are taken from the trailing address segments so that
-        namespaced child-module addresses (for example
-        ``module.app.variable.name``) render the local declaration name rather
-        than a module-path segment.
-
-        Handles block kinds with zero, one, or two labels:
-        - ``terraform`` (zero labels)
-        - ``moved`` / ``import`` (zero labels, but synthetic address like moved.1)
-        - ``resource`` / ``data`` (two labels: type and name)
-        - ``var``, ``output``, ``module``, ``provider``, ``check``,
-          ``provider_meta``, and individual ``local`` values (one label)
+        Labels come from the trailing address segments, so a child-module
+        address such as ``module.app.variable.name`` renders the local name.
         """
-        # Special zero‑label blocks: terraform, moved, import
+        # Zero-label blocks: terraform, moved, import
         if self.kind == "terraform":
             return "terraform { ... }"
         if self.kind in {"moved", "import"}:
@@ -112,7 +103,7 @@ class TerraformEntity:
         # Blocks with two labels: resource and data (use the two trailing labels)
         if self.kind in {"resource", "data"} and len(parts) >= 3:
             return f'{self.kind} "{parts[-2]}" "{parts[-1]}" {{ ... }}'
-        # One‑label blocks and local values (use the trailing label)
+        # One-label blocks and local values (use the trailing label)
         if len(parts) >= 2:
             return f'{self.kind} "{parts[-1]}" {{ ... }}'
         # Fallback for unexpected addresses

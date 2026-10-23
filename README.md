@@ -115,7 +115,7 @@ Reports exclude raw source values by default. To inspect source in a trusted
 local interactive report, use `--include-source-values`:
 
 ```sh
-# Static HTML summary with RAW source values
+# Interactive report with raw source values
 iaclineage report . --format interactive-html --include-source-values --output /path/to/reports/lineage-with-source.html
 ```
 
