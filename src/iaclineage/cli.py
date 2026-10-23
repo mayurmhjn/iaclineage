@@ -64,8 +64,28 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="include raw Terraform source in interactive report details (trusted users only)",
     )
+    report_parser.add_argument(
+        "--fail-on", type=_resolution_states, default=(), metavar="STATES",
+        help="exit 1 after writing the report if any reference is unresolved or ambiguous "
+             "(comma-separated: unresolved, ambiguous)",
+    )
+
+    unused_parser = subcommands.add_parser(
+        "unused", help="list variables, locals, and module outputs that nothing references",
+    )
+    unused_parser.add_argument("path", type=Path, help="local repository directory")
 
     return parser
+
+
+def _resolution_states(value: str) -> tuple[str, ...]:
+    states = tuple(state.strip() for state in value.split(","))
+    for state in states:
+        if state not in {"unresolved", "ambiguous"}:
+            raise argparse.ArgumentTypeError(
+                f"invalid choice {state!r} (choose from 'unresolved', 'ambiguous')"
+            )
+    return states
 
 
 class _Progress:
@@ -145,6 +165,8 @@ def main(arguments: Sequence[str] | None = None) -> int:
                 progress.message(
                     f"Summary: {progress.counts['matches']} match(es); output format is {args.format}."
                 )
+            elif args.command == "unused":
+                result = _unused(index, progress)
             else:
                 progress.message(f"Writing {args.format} report to {args.output.resolve()}...")
                 if args.include_source_values:
@@ -166,7 +188,13 @@ def main(arguments: Sequence[str] | None = None) -> int:
                     f"Summary: {len(index.entities)} declarations, {len(index.references)} references, "
                     f"{len(index.diagnostics)} diagnostics; {args.output.stat().st_size:,} bytes written."
                 )
-        outcome = "Complete" if result == 0 else "Finished without a unique match"
+                result = _check_fail_on(index, args.fail_on, progress)
+        if result == 0:
+            outcome = "Complete"
+        elif args.command == "find":
+            outcome = "Finished without a unique match"
+        else:
+            outcome = "Finished with findings"
         progress.message(f"{outcome} in {perf_counter() - progress.started:.2f}s.")
         return result
     except DiagnosticError as error:
@@ -271,6 +299,42 @@ def _find(args: argparse.Namespace, index: RepositoryIndex, progress: _Progress)
         else:
             print("  Incoming references: none")
         return 0
+
+
+def _check_fail_on(index: RepositoryIndex, states: tuple[str, ...], progress: _Progress) -> int:
+    counts = Counter(reference.resolution for reference in index.references)
+    failures = [f"{counts[state]} {state} reference(s)" for state in states if counts[state]]
+    if not failures:
+        return 0
+    progress.message(f"warning: {', '.join(failures)}; failing because of --fail-on.")
+    return 1
+
+
+def _unused(index: RepositoryIndex, progress: _Progress) -> int:
+    # Module-input bindings set a child variable but do not read it, and a
+    # variable's own validation block does not count as a use.
+    used = {
+        reference.target_address for reference in index.references
+        if reference.kind == "reference" and reference.source_address != reference.target_address
+    }
+    # A reference to a whole module object, such as `module.app`, reads every output.
+    whole_modules = tuple(f"{entity.address}.output." for entity in index.entities
+                          if entity.kind == "module" and entity.address in used)
+    unused = [
+        entity for entity in index.entities
+        if entity.kind in {"variable", "local", "output"}
+        and entity.address not in used
+        and not entity.address.startswith(whole_modules)
+        and ".terraform" not in entity.source_range.path.parts
+        # Root outputs are read from outside the configuration.
+        and not (entity.kind == "output" and entity.address.rpartition("::")[2].startswith("output."))
+    ]
+    for entity in unused:
+        print(f"{entity.address} ({entity.kind}) at {entity.source_range.display()}")
+    if not unused:
+        print("No unused variables, locals, or module outputs found.")
+    progress.message(f"Summary: {len(unused)} unused declaration(s); downloaded modules and root outputs are skipped.")
+    return 1 if unused else 0
 
 
 def _entity_dict(entity, index):

@@ -14,7 +14,7 @@ Linux/macOS:
 
 ```sh
 uv venv --python 3.12 .venv
-uv pip install --python .venv/bin/python --index-url https://pypi.org/simple tree-sitter==0.26.0 tree-sitter-hcl==1.2.0 pyyaml==6.0.3
+uv pip install --python .venv/bin/python --index-url https://pypi.org/simple tree-sitter==0.26.0 tree-sitter-hcl==1.2.0
 uv pip install --python .venv/bin/python --index-url https://test.pypi.org/simple --no-deps iaclineage==0.1.0b3
 .venv/bin/iaclineage --version
 ```
@@ -23,7 +23,7 @@ Windows PowerShell:
 
 ```powershell
 uv venv --python 3.12 .venv
-uv pip install --python .venv\Scripts\python.exe --index-url https://pypi.org/simple tree-sitter==0.26.0 tree-sitter-hcl==1.2.0 pyyaml==6.0.3
+uv pip install --python .venv\Scripts\python.exe --index-url https://pypi.org/simple tree-sitter==0.26.0 tree-sitter-hcl==1.2.0
 uv pip install --python .venv\Scripts\python.exe --index-url https://test.pypi.org/simple --no-deps iaclineage==0.1.0b3
 .venv\Scripts\iaclineage.exe --version
 ```
@@ -47,7 +47,7 @@ and inspect its references and diagnostics. Keep reports outside the scanned
 repository and all followed module directories. Source values remain excluded.
 Only use `--include-source-values` deliberately: its output may contain secrets.
 
-After PyPI publication, normal users can run
+Once the beta is on PyPI, install it with
 `pip install iaclineage`. To select this exact beta, use
 `pip install iaclineage==0.1.0b3`.
 See [platform support](platform-support.md) and the

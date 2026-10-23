@@ -1,42 +1,43 @@
 # Interactive report
 
-
-`report --format interactive-html` writes one self-contained HTML file. Open
-it locally in a browser to search declarations, filter projects and Terraform
+`report --format interactive-html` writes one self-contained HTML file. Open it
+locally in a browser to search declarations, filter projects and Terraform
 kinds, and select a declaration from the paginated table. The inspector contains
 Overview, Fields, References, Diagnostics, and Source tabs. Fields include
 nested blocks, object members, and tuple items; select a field to narrow its
-upstream/downstream trace. **Filter fields** searches field names and nested paths
-within the selected declaration. Matching descendants retain expanded parent
-context. Clear restores your previous expansion state; typing does not change the
-active trace. Switching declarations clears the field search. The evidence panel identifies both endpoints, the
-consuming field, referenced attribute, source range, and resolution state.
+upstream/downstream trace. **Filter fields** searches field names and nested
+paths within the selected declaration. Matching descendants retain expanded
+parent context. Clear restores your previous expansion state; typing does not
+change the active trace. Switching declarations clears the field search. The
+evidence panel identifies both endpoints, the consuming field, referenced
+attribute, source range, and resolution state.
 
 Use Upstream, Downstream, or Both and a hop depth, or All reachable to follow
 matching field paths across local and downloaded module inputs and outputs.
-Module bindings
-appear explicitly. A diagram starts with at most 80 endpoints and offers more
-when needed. Grouped cards retain individual field connections and branch
-controls. Numbered connections synchronize selection with the evidence table;
-the View selector offers graph, table, or both. Center selected returns to the
-chosen declaration. Narrow diagrams scroll; the optional shrink action is
-bounded to 75–100%. Missing and ambiguous targets stay visible; an ambiguous
-declaration address is never silently resolved to one candidate.
+Module bindings appear explicitly. A diagram starts with at most 80 endpoints
+and offers more when needed. Grouped cards retain individual field connections
+and branch controls. Numbered connections synchronize selection with the
+evidence table; the View selector offers graph, table, or both. Center selected
+returns to the chosen declaration. Narrow diagrams scroll; the optional shrink
+action is bounded to 75–100%. Missing and ambiguous targets stay visible; an
+ambiguous declaration address is never silently resolved to one candidate.
 
-The header's **Hide .terraform content** filter applies throughout the interactive
-report: declaration lists, fields, references, diagnostics, counts, and lineage.
-It hides installed-cache declarations and their connections until unchecked;
-it does not remove data from the generated file. Other declaration filters remain
-available in the sidebar. **Hide declarations / Show declarations** reclaims that
-sidebar space. Drag the right edge of Declarations or the left edge of Reference
-evidence to resize their widths. When evidence sits below the workspace, drag its
-bottom edge to resize its height. Focus a divider and use arrow keys, or Home/End,
-to resize with the keyboard; double-click to reset. Sizes persist while navigating
-the open report and reset on reload. **Maximize lineage** expands the trace workspace; **Restore layout**
-or Escape returns to the inspector. Source filtering and sidebar visibility persist
-while navigating within the open report. Conditional evidence starts collapsed and can be expanded per field.
-Desktop layouts are checked from 1024×768 through 2560×1440; mobile is outside the
-target scope. Regenerate existing reports to receive updated controls.
+The header's **Hide .terraform content** filter applies throughout the
+interactive report: declaration lists, fields, references, diagnostics, counts,
+and lineage. It hides installed-cache declarations and their connections until
+unchecked; it does not remove data from the generated file. Other declaration
+filters remain available in the sidebar. **Hide declarations / Show
+declarations** reclaims that sidebar space. Drag the right edge of Declarations
+or the left edge of Reference evidence to resize their widths. When evidence
+sits below the workspace, drag its bottom edge to resize its height. Focus a
+divider and use arrow keys, or Home/End, to resize with the keyboard;
+double-click to reset. Sizes persist while navigating the open report and reset
+on reload. **Maximize lineage** expands the trace workspace; **Restore layout**
+or Escape returns to the inspector. Source filtering and sidebar visibility
+persist while navigating within the open report. Conditional evidence starts
+collapsed and can be expanded per field. Desktop layouts are checked from
+1024×768 through 2560×1440; mobile is outside the target scope. Regenerate
+existing reports to receive updated controls.
 
 The declaration list appears in the sidebar while inspecting an object; browsing
 uses the main table. More trace controls groups expansion, centering, shrinking,

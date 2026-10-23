@@ -10,10 +10,12 @@ and uses Semantic Versioning concepts with Python PEP 440 pre-release versions.
 ### Added
 
 - Demo GIF in `README.md` covering a CLI scan, lineage filtering, navigation through downloaded modules, and source inspection.
+- `unused` command that lists variables, locals, and child-module outputs with no references. It exits `1` when it finds any.
+- `report --fail-on unresolved,ambiguous` exits `1` after writing the report when references are in those states.
 
 ### Changed
 
-- Remove the unused `pyyaml` dependency.
+- Remove the unused `pyyaml` dependency, including from the TestPyPI install commands in the tester guide.
 
 ### Fixed
 

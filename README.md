@@ -5,7 +5,7 @@ checkout. IaCLineage provides a Python CLI and a self-contained HTML report with
 searchable declarations, field-level lineage, and source locations.
 
 No Terraform execution, cloud credentials, server, or network access is required
-to analyze source or open a report. This checkout prepares **0.1.0b3 (beta)**.
+to analyze source or open a report. The current version is 0.1.0b3, a beta.
 
 <img src="docs/images/demo.gif" alt="IaCLineage: search a declaration and trace its dependencies"/>
 
@@ -127,6 +127,39 @@ The interactive report includes declaration and field search, project and kind
 filters, module input/output connections, conditional evidence, and a resizable
 lineage workspace. See the [interactive report guide](https://github.com/mayurmhjn/iaclineage/blob/main/docs/interactive-report.md)
 for controls and tracing behavior.
+
+## Unused declarations
+
+`unused` lists variables, locals, and child-module outputs that no expression
+references:
+
+```sh
+iaclineage unused /path/to/terraform
+```
+
+Each line gives the address, kind, and source location. The command exits `1`
+when it finds anything and `0` when it finds nothing, so it can run in CI.
+
+A variable counts as unused when a module call sets it but nothing inside the
+module reads it. References from a variable's own `validation` block do not
+count. A reference to a whole module object, such as `module.app`, uses all of
+that module's outputs. Root module outputs are skipped because they are read
+from outside the configuration, and so are declarations inside downloaded
+modules under `.terraform`. IaCLineage only sees static references, so check
+each result before deleting it.
+
+## CI checks
+
+`report --fail-on` writes the report as usual, then exits `1` if any reference
+has one of the listed resolution states:
+
+```sh
+iaclineage report . --format json --output /path/to/reports/lineage.json --fail-on unresolved,ambiguous
+```
+
+Accepted states are `unresolved` and `ambiguous`. References into remote
+modules whose source has not been downloaded stay unresolved, so run
+`terraform get` first when the configuration uses them.
 
 ## Analysis scope
 

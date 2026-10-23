@@ -269,3 +269,106 @@ def test_no_color_environment_disables_auto(monkeypatch):
             return True
     monkeypatch.setattr(cli.sys, "stderr", Terminal())
     assert cli._Progress("scan", "auto").color is False
+
+
+def _write_tree(root: Path, files: dict[str, str]) -> None:
+    for name, text in files.items():
+        path = root / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+
+
+def test_unused_lists_unreferenced_variables_locals_and_child_outputs(tmp_path, capsys):
+    _write_tree(tmp_path, {
+        "main.tf": (
+            'variable "used" {}\n'
+            'variable "unused" {\n  validation {\n    condition = var.unused != ""\n'
+            '    error_message = "empty"\n  }\n}\n'
+            'locals {\n  kept = var.used\n  dropped = 1\n}\n'
+            'module "app" {\n  source = "./app"\n  name = local.kept\n}\n'
+            'output "root" { value = module.app.id }\n'
+        ),
+        "app/main.tf": (
+            'variable "name" {}\n'
+            'output "id" { value = 1 }\n'
+            'output "extra" { value = 2 }\n'
+        ),
+    })
+
+    assert main(["unused", str(tmp_path)]) == 1
+    captured = capsys.readouterr()
+    lines = captured.out.splitlines()
+    assert lines == [
+        "local.dropped (local) at main.tf:10:3-10:14",
+        "module.app.output.extra (output) at app/main.tf:3:1-3:29",
+        "module.app.variable.name (variable) at app/main.tf:1:1-1:19",
+        "variable.unused (variable) at main.tf:2:1-7:2",
+    ]
+    assert "Summary: 4 unused declaration(s)" in captured.err
+
+
+def test_unused_returns_zero_when_everything_is_referenced(tmp_path, capsys):
+    _write_tree(tmp_path, {"main.tf": 'variable "name" {}\noutput "name" { value = var.name }\n'})
+
+    assert main(["unused", str(tmp_path)]) == 0
+    captured = capsys.readouterr()
+    assert captured.out == "No unused variables, locals, or module outputs found.\n"
+    assert "Complete" in captured.err
+
+
+def test_unused_ignores_downloaded_module_declarations(tmp_path, capsys):
+    source = "git::https://example.invalid/modules.git//app?ref=v1"
+    _write_tree(tmp_path, {
+        "main.tf": f'module "app" {{\n  source = "{source}"\n}}\n',
+        ".terraform/modules/app/main.tf": 'variable "extra" {}\noutput "id" { value = 1 }\n',
+        ".terraform/modules/modules.json": json.dumps(
+            {"Modules": [{"Key": "app", "Source": source, "Dir": ".terraform/modules/app"}]}
+        ),
+    })
+
+    assert main(["unused", str(tmp_path)]) == 0
+    assert "module.app" not in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(("fail_on", "code"), [
+    ("unresolved", 1), ("ambiguous", 0), ("unresolved,ambiguous", 1),
+])
+def test_report_fail_on_sets_exit_code_after_writing(tmp_path, capsys, fail_on, code):
+    _write_tree(tmp_path / "src", {"main.tf": 'output "x" { value = var.missing }\n'})
+    output = tmp_path / "report.json"
+
+    assert main(["report", str(tmp_path / "src"), "--format", "json",
+                 "--output", str(output), "--fail-on", fail_on]) == code
+    assert output.exists()
+    captured = capsys.readouterr()
+    if code:
+        assert "warning: 1 unresolved reference(s); failing because of --fail-on" in captured.err
+        assert "Complete" not in captured.err
+
+
+def test_report_fail_on_counts_ambiguous_references(tmp_path, capsys):
+    _write_tree(tmp_path / "src", {
+        "a.tf": 'variable "dup" {}\n',
+        "b.tf": 'variable "dup" {}\noutput "x" { value = var.dup }\n',
+    })
+
+    assert main(["report", str(tmp_path / "src"), "--format", "json",
+                 "--output", str(tmp_path / "r.json"), "--fail-on", "ambiguous"]) == 1
+    assert "1 ambiguous reference(s)" in capsys.readouterr().err
+
+
+def test_report_fail_on_rejects_unknown_states(tmp_path, capsys):
+    with pytest.raises(SystemExit) as error:
+        main(["report", str(tmp_path), "--output", str(tmp_path / "r.html"), "--fail-on", "resolved"])
+    assert error.value.code == 2
+    assert "invalid choice 'resolved'" in capsys.readouterr().err
+
+
+def test_unused_treats_whole_module_references_as_using_its_outputs(tmp_path, capsys):
+    _write_tree(tmp_path, {
+        "main.tf": 'module "app" {\n  source = "./app"\n}\noutput "all" { value = module.app }\n',
+        "app/main.tf": 'output "id" { value = 1 }\n',
+    })
+
+    assert main(["unused", str(tmp_path)]) == 0
+    assert "module.app.output.id" not in capsys.readouterr().out

@@ -21,8 +21,8 @@ read-only and its scripts are never executed.
 
 The external cache examples use placeholder keys such as `root;m` and do not
 contain runnable root modules. The supplemental cache inputs use exact current
-keys such as `m`, so a source-mismatch case actually reaches source comparison
-rather than merely failing to find the manifest entry.
+keys such as `m`, so a source-mismatch case reaches source comparison instead of
+failing to find the manifest entry.
 
 ## Manifest rules
 
